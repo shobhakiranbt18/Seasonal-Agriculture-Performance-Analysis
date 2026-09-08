@@ -1,0 +1,707 @@
+# ============================================================
+# SEASONAL AGRICULTURE PERFORMANCE ANALYSIS
+# Simple Complete Google Colab Code
+# ============================================================
+
+# -----------------------------
+# 1. IMPORT LIBRARIES
+# -----------------------------
+import pandas as pd
+import numpy as np
+import matplotlib.pyplot as plt
+import seaborn as sns
+from scipy.stats import f_oneway, kruskal
+
+from google.colab import files
+import io
+import os
+
+sns.set_style("whitegrid")
+
+# -----------------------------
+# 2. UPLOAD DATASET
+# -----------------------------
+print("Upload your CSV or Excel dataset:")
+
+uploaded = files.upload()
+
+file_name = list(uploaded.keys())[0]
+extension = os.path.splitext(file_name)[1].lower()
+
+if extension == ".csv":
+    df = pd.read_csv(io.BytesIO(uploaded[file_name]))
+elif extension in [".xlsx", ".xls"]:
+    df = pd.read_excel(io.BytesIO(uploaded[file_name]))
+else:
+    raise ValueError("Please upload CSV or Excel file.")
+
+print("\nDataset loaded successfully!")
+
+# -----------------------------
+# 3. BASIC DATASET INFORMATION
+# -----------------------------
+print("\n========== DATASET INFORMATION ==========")
+
+print("Shape:", df.shape)
+
+print("\nColumn Names:")
+print(df.columns.tolist())
+
+print("\nData Types:")
+print(df.dtypes)
+
+print("\nFirst 5 Rows:")
+print(df.head())
+
+print("\nLast 5 Rows:")
+print(df.tail())
+
+# -----------------------------
+# 4. DATASET DESCRIPTION
+# -----------------------------
+print("\n========== DESCRIPTIVE STATISTICS ==========")
+
+print(df.describe(include="all").T)
+
+# -----------------------------
+# 5. NUMERICAL & CATEGORICAL COLUMNS
+# -----------------------------
+numeric_columns = df.select_dtypes(
+    include=np.number
+).columns.tolist()
+
+categorical_columns = df.select_dtypes(
+    include=["object", "category", "bool"]
+).columns.tolist()
+
+print("\nNumerical Columns:")
+print(numeric_columns)
+
+print("\nCategorical Columns:")
+print(categorical_columns)
+
+# -----------------------------
+# 6. FIND SEASON COLUMN
+# -----------------------------
+season_column = None
+
+for col in df.columns:
+    name = str(col).lower()
+
+    if "season" in name:
+        season_column = col
+        break
+
+# If season column is not found, check common season values
+if season_column is None:
+
+    common_seasons = [
+        "kharif", "rabi", "zaid",
+        "summer", "winter",
+        "spring", "autumn",
+        "monsoon", "dry", "wet"
+    ]
+
+    for col in categorical_columns:
+
+        values = (
+            df[col]
+            .dropna()
+            .astype(str)
+            .str.lower()
+        )
+
+        if values.isin(common_seasons).sum() > 0:
+            season_column = col
+            break
+
+print("\nDetected Season Column:", season_column)
+
+if season_column is None:
+    raise ValueError(
+        "Season column could not be detected. "
+        "Please check your dataset."
+    )
+
+print("\nSeason Values:")
+print(df[season_column].value_counts())
+
+# -----------------------------
+# 7. MISSING VALUES
+# -----------------------------
+print("\n========== MISSING VALUES ==========")
+
+missing = df.isnull().sum()
+
+missing_percent = (
+    df.isnull().mean() * 100
+).round(2)
+
+missing_table = pd.DataFrame({
+    "Missing Values": missing,
+    "Missing %": missing_percent
+})
+
+print(missing_table)
+
+# -----------------------------
+# 8. REMOVE DUPLICATES
+# -----------------------------
+duplicate_count = df.duplicated().sum()
+
+print("\nDuplicate Rows:", duplicate_count)
+
+df = df.drop_duplicates()
+
+# -----------------------------
+# 9. HANDLE MISSING VALUES
+# -----------------------------
+for col in numeric_columns:
+
+    df[col] = df[col].fillna(
+        df[col].median()
+    )
+
+for col in categorical_columns:
+
+    df[col] = df[col].fillna(
+        "Unknown"
+    )
+
+print("\nMissing values handled.")
+
+# -----------------------------
+# 10. FIND AGRICULTURAL VARIABLES
+# -----------------------------
+performance_keywords = [
+    "production",
+    "yield",
+    "productivity",
+    "output",
+    "performance",
+    "harvest"
+]
+
+resource_keywords = [
+    "water",
+    "irrigation",
+    "fertilizer",
+    "pesticide",
+    "labor",
+    "labour",
+    "energy",
+    "fuel",
+    "resource"
+]
+
+environment_keywords = [
+    "rainfall",
+    "temperature",
+    "humidity",
+    "soil",
+    "moisture",
+    "weather",
+    "climate",
+    "sunlight"
+]
+
+economic_keywords = [
+    "income",
+    "revenue",
+    "profit",
+    "cost",
+    "price",
+    "expense",
+    "economic",
+    "return"
+]
+
+performance_columns = []
+resource_columns = []
+environment_columns = []
+economic_columns = []
+
+for col in numeric_columns:
+
+    name = str(col).lower()
+
+    if any(word in name for word in performance_keywords):
+        performance_columns.append(col)
+
+    if any(word in name for word in resource_keywords):
+        resource_columns.append(col)
+
+    if any(word in name for word in environment_keywords):
+        environment_columns.append(col)
+
+    if any(word in name for word in economic_keywords):
+        economic_columns.append(col)
+
+print("\nPerformance Columns:")
+print(performance_columns)
+
+print("\nResource Columns:")
+print(resource_columns)
+
+print("\nEnvironmental Columns:")
+print(environment_columns)
+
+print("\nEconomic Columns:")
+print(economic_columns)
+
+# -----------------------------
+# 11. SELECT MAIN PERFORMANCE
+# -----------------------------
+if performance_columns:
+
+    performance_column = performance_columns[0]
+
+else:
+
+    # Use first numerical column as fallback
+    performance_column = numeric_columns[0]
+
+print("\nMain Performance Variable:")
+print(performance_column)
+
+# -----------------------------
+# 12. RECORDS BY SEASON
+# -----------------------------
+plt.figure(figsize=(8,5))
+
+sns.countplot(
+    data=df,
+    x=season_column
+)
+
+plt.title("Number of Records by Season")
+plt.xlabel("Season")
+plt.ylabel("Number of Records")
+plt.xticks(rotation=45)
+
+plt.tight_layout()
+plt.show()
+
+# -----------------------------
+# 13. PERFORMANCE BY SEASON
+# -----------------------------
+seasonal_performance = (
+    df.groupby(season_column)[performance_column]
+    .agg([
+        "mean",
+        "median",
+        "min",
+        "max",
+        "std",
+        "count"
+    ])
+    .round(2)
+)
+
+print("\n========== SEASONAL PERFORMANCE ==========")
+print(seasonal_performance)
+
+# -----------------------------
+# 14. PERFORMANCE BAR CHART
+# -----------------------------
+plt.figure(figsize=(8,5))
+
+sns.barplot(
+    data=df,
+    x=season_column,
+    y=performance_column
+)
+
+plt.title(
+    f"{performance_column} by Season"
+)
+
+plt.xlabel("Season")
+plt.ylabel(performance_column)
+
+plt.xticks(rotation=45)
+
+plt.tight_layout()
+plt.show()
+
+# -----------------------------
+# 15. PERFORMANCE BOXPLOT
+# -----------------------------
+plt.figure(figsize=(8,5))
+
+sns.boxplot(
+    data=df,
+    x=season_column,
+    y=performance_column
+)
+
+plt.title(
+    f"{performance_column} Distribution by Season"
+)
+
+plt.xlabel("Season")
+plt.ylabel(performance_column)
+
+plt.xticks(rotation=45)
+
+plt.tight_layout()
+plt.show()
+
+# -----------------------------
+# 16. PRODUCTION ANALYSIS
+# -----------------------------
+for col in performance_columns[:3]:
+
+    plt.figure(figsize=(8,5))
+
+    sns.barplot(
+        data=df,
+        x=season_column,
+        y=col
+    )
+
+    plt.title(f"{col} by Season")
+    plt.xlabel("Season")
+    plt.ylabel(col)
+
+    plt.xticks(rotation=45)
+
+    plt.tight_layout()
+    plt.show()
+
+# -----------------------------
+# 17. RESOURCE ANALYSIS
+# -----------------------------
+for col in resource_columns[:4]:
+
+    plt.figure(figsize=(8,5))
+
+    sns.barplot(
+        data=df,
+        x=season_column,
+        y=col
+    )
+
+    plt.title(f"{col} by Season")
+    plt.xlabel("Season")
+    plt.ylabel(col)
+
+    plt.xticks(rotation=45)
+
+    plt.tight_layout()
+    plt.show()
+
+# -----------------------------
+# 18. ENVIRONMENT ANALYSIS
+# -----------------------------
+for col in environment_columns[:4]:
+
+    plt.figure(figsize=(8,5))
+
+    sns.boxplot(
+        data=df,
+        x=season_column,
+        y=col
+    )
+
+    plt.title(f"{col} by Season")
+    plt.xlabel("Season")
+    plt.ylabel(col)
+
+    plt.xticks(rotation=45)
+
+    plt.tight_layout()
+    plt.show()
+
+# -----------------------------
+# 19. ECONOMIC ANALYSIS
+# -----------------------------
+for col in economic_columns[:4]:
+
+    plt.figure(figsize=(8,5))
+
+    sns.barplot(
+        data=df,
+        x=season_column,
+        y=col
+    )
+
+    plt.title(f"{col} by Season")
+    plt.xlabel("Season")
+    plt.ylabel(col)
+
+    plt.xticks(rotation=45)
+
+    plt.tight_layout()
+    plt.show()
+
+# -----------------------------
+# 20. CORRELATION HEATMAP
+# -----------------------------
+if len(numeric_columns) >= 2:
+
+    plt.figure(
+        figsize=(12,8)
+    )
+
+    sns.heatmap(
+        df[numeric_columns].corr(),
+        annot=True,
+        cmap="coolwarm",
+        fmt=".2f"
+    )
+
+    plt.title(
+        "Correlation Heatmap"
+    )
+
+    plt.tight_layout()
+    plt.show()
+
+# -----------------------------
+# 21. RELATIONSHIP ANALYSIS
+# -----------------------------
+print("\n========== CORRELATION WITH PERFORMANCE ==========")
+
+if len(numeric_columns) > 1:
+
+    correlation = (
+        df[numeric_columns]
+        .corr()[performance_column]
+        .sort_values(
+            ascending=False
+        )
+    )
+
+    print(correlation)
+
+# -----------------------------
+# 22. SCATTER PLOTS
+# -----------------------------
+relationship_columns = list(dict.fromkeys(
+    resource_columns +
+    environment_columns +
+    economic_columns
+))
+
+for col in relationship_columns[:6]:
+
+    if col != performance_column:
+
+        plt.figure(figsize=(8,5))
+
+        sns.scatterplot(
+            data=df,
+            x=col,
+            y=performance_column,
+            hue=season_column
+        )
+
+        plt.title(
+            f"{col} vs {performance_column}"
+        )
+
+        plt.xlabel(col)
+        plt.ylabel(performance_column)
+
+        plt.tight_layout()
+        plt.show()
+
+# -----------------------------
+# 23. STATISTICAL TEST
+# -----------------------------
+print("\n========== STATISTICAL ANALYSIS ==========")
+
+groups = []
+
+season_names = []
+
+for season, group in df.groupby(season_column):
+
+    values = group[
+        performance_column
+    ].dropna()
+
+    if len(values) >= 2:
+
+        groups.append(values)
+        season_names.append(season)
+
+if len(groups) >= 2:
+
+    if len(groups) == 2:
+
+        statistic, p_value = kruskal(
+            groups[0],
+            groups[1]
+        )
+
+        test_name = "Kruskal-Wallis Test"
+
+    else:
+
+        statistic, p_value = kruskal(
+            *groups
+        )
+
+        test_name = "Kruskal-Wallis Test"
+
+    print("Test:", test_name)
+    print("Statistic:", round(statistic, 4))
+    print("P-value:", round(p_value, 4))
+
+    if p_value < 0.05:
+
+        print(
+            "\nResult: There is a statistically significant "
+            "difference in agricultural performance between seasons."
+        )
+
+        print(
+            "Null hypothesis is rejected."
+        )
+
+    else:
+
+        print(
+            "\nResult: No statistically significant difference "
+            "was detected between seasons."
+        )
+
+        print(
+            "Null hypothesis is not rejected."
+        )
+
+else:
+
+    print(
+        "Not enough seasonal groups for statistical testing."
+    )
+
+# -----------------------------
+# 24. BEST AND LOWEST SEASON
+# -----------------------------
+season_means = (
+    df.groupby(season_column)[performance_column]
+    .mean()
+    .sort_values(ascending=False)
+)
+
+best_season = season_means.index[0]
+lowest_season = season_means.index[-1]
+
+print("\n========== KEY FINDINGS ==========")
+
+print(
+    f"Best-performing season: {best_season}"
+)
+
+print(
+    f"Lowest-performing season: {lowest_season}"
+)
+
+print(
+    f"Highest average {performance_column}: "
+    f"{season_means.iloc[0]:.2f}"
+)
+
+print(
+    f"Lowest average {performance_column}: "
+    f"{season_means.iloc[-1]:.2f}"
+)
+
+# -----------------------------
+# 25. OUTLIER ANALYSIS
+# -----------------------------
+print("\n========== OUTLIER ANALYSIS ==========")
+
+for col in numeric_columns:
+
+    Q1 = df[col].quantile(0.25)
+    Q3 = df[col].quantile(0.75)
+
+    IQR = Q3 - Q1
+
+    lower = Q1 - 1.5 * IQR
+    upper = Q3 + 1.5 * IQR
+
+    outliers = df[
+        (df[col] < lower) |
+        (df[col] > upper)
+    ]
+
+    print(
+        f"{col}: {len(outliers)} outliers"
+    )
+
+# -----------------------------
+# 26. AUTOMATIC RECOMMENDATIONS
+# -----------------------------
+print("\n========== RECOMMENDATIONS ==========")
+
+print(
+    f"1. Consider the seasonal conditions observed in "
+    f"{best_season} when planning agricultural activities."
+)
+
+print(
+    f"2. Investigate the factors associated with lower "
+    f"performance during {lowest_season}."
+)
+
+if resource_columns:
+
+    print(
+        "3. Allocate agricultural resources according to "
+        "the seasonal resource-usage patterns identified."
+    )
+
+if environment_columns:
+
+    print(
+        "4. Monitor environmental conditions that show "
+        "strong seasonal variation."
+    )
+
+if economic_columns:
+
+    print(
+        "5. Consider seasonal economic variations when "
+        "planning production and resource expenditure."
+    )
+
+# -----------------------------
+# 27. FINAL CONCLUSION
+# -----------------------------
+print("\n========== FINAL CONCLUSION ==========")
+
+print(
+    f"""
+The Seasonal Agriculture Performance Analysis examined the
+uploaded agricultural dataset to understand how agricultural
+performance varies across seasons.
+
+The analysis included data cleaning, descriptive statistics,
+seasonal comparisons, production analysis, resource analysis,
+environmental analysis, economic analysis, correlation analysis,
+outlier detection, visualization, and statistical testing.
+
+The season with the highest average {performance_column} was
+{best_season}, while the lowest average performance was observed
+in {lowest_season}.
+
+The analysis also examined relationships between agricultural
+performance and available resource, environmental, and economic
+variables.
+
+These findings can support seasonal agricultural planning,
+resource allocation, production management, and economic planning.
+
+The conclusions are limited to the variables and observations
+available in the uploaded dataset. Correlation does not prove
+causation, and unusual observations may require further
+investigation.
+"""
+)
+
+print("\n========== PROJECT COMPLETED ==========")
